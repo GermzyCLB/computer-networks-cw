@@ -184,6 +184,8 @@ public class Node implements NodeInterface {
         //set socket timeout only if the delay is more than zero
         if (delay > 0) {
             socket.setSoTimeout(delay);
+        }else {
+            socket.setSoTimeout(10000);
         }
 
         try {
