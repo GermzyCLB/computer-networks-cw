@@ -178,97 +178,49 @@ public class Node implements NodeInterface {
     }
 
     public void handleIncomingMessages(int delay) throws Exception {
+        System.out.println("handleIncomingMessages called with delay: " + delay); // Temporary debug
         byte[] buffer = new byte[1024];
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-
-        //set socket timeout only if the delay is more than zero
         if (delay > 0) {
             socket.setSoTimeout(delay);
-        }else {
-            socket.setSoTimeout(10000);
+            System.out.println("Socket timeout set to: " + delay + "ms"); // Temporary debug
+        } else {
+            socket.setSoTimeout(10000); // Default to 10 seconds
+            System.out.println("Socket timeout set to default: 10000ms"); // Temporary debug
         }
-
         try {
             while (true) {
-                //successive in receiving an incoming udp port throught process
+                System.out.println("Waiting for incoming message..."); // Temporary debug
                 socket.receive(packet);
-                String received = new String((packet.getData()), 0, packet.getLength(), StandardCharsets.UTF_8);
-
-                //prints whats sent and received
-                //System.out.println("Received: " + received + " from " + packet.getAddress().getHostAddress() + ":" + packet.getPort());
-
-
-                //now we need to parse the CRN message
-                //what the correct format needs to be: "<txId> ,<type> [payload]"
-
+                String received = new String(packet.getData(), 0, packet.getLength(), StandardCharsets.UTF_8);
+                System.out.println("Received message: " + received); // Temporary debug
                 String[] parts = received.split(" ", 3);
                 if (parts.length < 2) {
-                    //System.out.println("ERROR..invalid message format");
                     continue;
                 }
-                String txID = parts[0]; //refers to the 2-byte transaction id
-                String type = parts[1];  //for example letters like "G" "N"  "R"
+                String txID = parts[0];
+                String type = parts[1];
                 String payload = (parts.length > 2) ? parts[2] : " ";
-
                 switch (type) {
-                    //case that requests the name
-                    case "G":
-                        //System.out.println("[debugger] processing 'G' (name request) from"  + packet.getAddress() + ":" + packet.getPort());
-                        handleNameRequest(txID, packet);
-                        break;
-
-                    //case that deals with the nearest request
-                    case "N":
-                        //System.out.println("[DEBUG] Processing 'N' (Nearest Request) with payload: " + payload);
-                        handleNearestRequest(txID, packet, payload);
-                        break;
-                    // case that shows the existence of a key
-                    case "E":
-                        //System.out.println("[DEBUG] Processing 'E' (Existence Request) with payload: " + payload);
-                        handleKeyExistenceRequest(txID, packet, payload);
-                        break;
-
-                    //case that deals with the read capability
-                    case "R":
-                        // System.out.println("[DEBUG] Processing 'R' (Read Request) with payload: " + payload);
-                        handleReadRequest(txID, packet, payload);
-                        break;
-
-                    //case that deals with write capability
-                    case "W":
-                        // System.out.println("[DEBUG] Processing 'W' (Write Request) with payload: " + payload);
-                        handleWriteRequest(txID, packet, payload);
-                        break;
-
-                    //case that deals with compare and swap
-                    case "C":
-                        //System.out.println("[DEBUG] Processing 'C' (CAS Request) with payload: " + payload);
-                        handleCASRequest(txID, packet, payload);
-                        break;
-
-                    //handles relay functionality/capability
-                    case "V":
-                        // System.out.println("[DEBUG] Processing 'V' (Relay Request) with payload: " + payload);
-                        handleRelayRequest(txID, packet, payload);
-                        break;
-
-                    //purely information (no response needed)
-                    case "I":
-                        //System.out.println("INFO message: " + payload);
-                        break;
-
-                    //default:
-                    //  System.out.println("ERROR unhandled message type" + type);
-
-
+                    case "G": handleNameRequest(txID, packet); break;
+                    case "N": handleNearestRequest(txID, packet, payload); break;
+                    case "E": handleKeyExistenceRequest(txID, packet, payload); break;
+                    case "R": handleReadRequest(txID, packet, payload); break;
+                    case "W": handleWriteRequest(txID, packet, payload); break;
+                    case "C": handleCASRequest(txID, packet, payload); break;
+                    case "V": handleRelayRequest(txID, packet, payload); break;
+                    case "I": break;
                 }
             }
-
-
         } catch (SocketTimeoutException e) {
-            // Timed out after 'delay' ms with no messages
-            System.out.println("[INFO]...No messages received within the specified delay.");
+            System.out.println("SocketTimeoutException: No messages received within " + (delay > 0 ? delay : 10000) + "ms"); // Temporary debug
+        } catch (Exception e) {
+            System.out.println("Unexpected exception in handleIncomingMessages: " + e.getMessage()); // Temporary debug
+            throw e;
         }
+
+
+
     }
 //this part purely deals with request handlers//
 
