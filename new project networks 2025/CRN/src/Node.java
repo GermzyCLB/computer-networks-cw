@@ -270,9 +270,9 @@ public class Node implements NodeInterface {
 
 
     public void openPort(int portNumber) throws Exception {
-//        if (portNumber < 20110 || portNumber > 20130) {
-//            throw new Exception("Port number must be between 20110 and 20130");
-//        }
+       if (portNumber < 20110 || portNumber > 20130) {
+            throw new Exception("Port number must be between 20110 and 20130");
+       }
         socket = new DatagramSocket(portNumber);
         // Update our address with the correct port
         // Update our address with the correct port
