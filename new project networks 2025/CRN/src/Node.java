@@ -284,48 +284,63 @@ public class Node implements NodeInterface {
     public void handleIncomingMessages(int delay) throws Exception {
         byte[] buffer = new byte[1024];
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-        socket.setSoTimeout(delay > 0 ? delay : 10000); // Default to 10 seconds if delay is 0
+        socket.setSoTimeout(delay > 0 ? delay : 1000); // Default to 1 second if delay is 0
+        int maxAttempts = 3; // Exit after 3 timeouts (3 seconds total)
+        int attempts = 0;
+
         try {
-            while (true) {
-                socket.receive(packet);
-                String message = new String(packet.getData(), 0, packet.getLength(), StandardCharsets.UTF_8);
-                String[] parts = message.split(" ", 3);
-                if (parts.length < 2) continue;
-                String txID = parts[0];
-                String type = parts[1];
-                String payload = parts.length > 2 ? parts[2] : "";
-                switch (type) {
-                    case "G":
-                        handleNameRequest(txID, packet);
-                        break;
-                    case "N":
-                        handleNearestRequest(txID, packet, payload);
-                        break;
-                    case "E":
-                        handleKeyExistenceRequest(txID, packet, payload);
-                        break;
-                    case "R":
-                        handleReadRequest(txID, packet, payload);
-                        break;
-                    case "W":
-                        handleWriteRequest(txID, packet, payload);
-                        break;
-                    case "C":
-                        handleCASRequest(txID, packet, payload);
-                        break;
-                    case "V":
-                        handleRelayRequest(txID, packet, payload);
-                        break;
-                    case "I":
-                        break; // Ignore information messages
-                    default: // Handle unknown messages gracefully
-                        System.out.println("Received unknown message type: " + type);
+            while (attempts < maxAttempts) {
+                try {
+                    socket.receive(packet);
+                    String message = new String(packet.getData(), 0, packet.getLength(), StandardCharsets.UTF_8);
+                    String[] parts = message.split(" ", 3);
+                    if (parts.length < 2) continue;
+                    String txID = parts[0];
+                    String type = parts[1];
+                    String payload = parts.length > 2 ? parts[2] : "";
+                    switch (type) {
+                        case "G":
+                            handleNameRequest(txID, packet);
+                            break;
+                        case "N":
+                            handleNearestRequest(txID, packet, payload);
+                            break;
+                        case "E":
+                            handleKeyExistenceRequest(txID, packet, payload);
+                            break;
+                        case "R":
+                            handleReadRequest(txID, packet, payload);
+                            break;
+                        case "W":
+                            handleWriteRequest(txID, packet, payload);
+                            break;
+                        case "C":
+                            handleCASRequest(txID, packet, payload);
+                            break;
+                        case "V":
+                            handleRelayRequest(txID, packet, payload);
+                            break;
+                        case "I":
+                            break; // Ignore information messages
+                        default:
+                            System.out.println("[" + nodeName + "] Received unknown message type: " + type);
+                    }
+                    attempts = 0; // Reset attempts on successful message
+                } catch (SocketTimeoutException e) {
+                    attempts++;
+                    System.out.println("[" + nodeName + "] Timeout after " + (delay > 0 ? delay : 1000) + "ms, attempt " + attempts + "/" + maxAttempts);
+                    if (attempts >= maxAttempts) {
+                        System.out.println("[" + nodeName + "] Max attempts reached, exiting handleIncomingMessages");
+                        return;
+                    }
                 }
             }
-        } catch (SocketTimeoutException e) {
-            // Timeout is expected when no messages are received
+        } catch (Exception e) {
+            System.out.println("[" + nodeName + "] Error in handleIncomingMessages: " + e.getMessage());
+            throw e; // Re-throw to allow calling method to handle
+        }
 
-    }
+
 
 
 
@@ -637,16 +652,23 @@ public class Node implements NodeInterface {
         System.out.println("[" + nodeName + "] Writing key: " + key);
         System.out.println("[" + nodeName + "] addressStore before handleIncomingMessages: " + addressStore);
 
-        // Retry processing messages to ensure we get bootstrap messages
-        int attempts = 0;
-        while (addressStore.size() <= 1 && attempts < 5) { // Increase to 5 attempts
-            handleIncomingMessages(3000); // Increase timeout to 3000ms
-            attempts++;
-            System.out.println("[" + nodeName + "] Attempt " + (attempts) + " - addressStore: " + addressStore);
+        // Clean up addressStore before processing messages
+        Iterator<Map.Entry<String, String>> iterator = addressStore.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, String> entry = iterator.next();
+            String nodeName = entry.getKey();
+            if (!nodeName.equals(this.nodeName) && !isActive(nodeName)) {
+                System.out.println("[" + this.nodeName + "] Removing inactive node: " + nodeName);
+                iterator.remove();
+            }
         }
 
-        // Validate addressStore entries by checking if nodes are active
-        Iterator<Map.Entry<String, String>> iterator = addressStore.entrySet().iterator();
+        // Skip the handleIncomingMessages loop to speed up bootstrap
+        // The bootstrap messages from AzureLabTest will populate addressStore via handleWriteRequest
+        System.out.println("[" + nodeName + "] Skipping handleIncomingMessages loop for faster bootstrap");
+
+        // Validate addressStore entries
+        iterator = addressStore.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<String, String> entry = iterator.next();
             String nodeName = entry.getKey();
@@ -662,7 +684,7 @@ public class Node implements NodeInterface {
                 int port = Integer.parseInt(addrParts[1]);
                 String txID = generateTxID();
                 String request = txID + " G";
-                String response = sendRequestWithRetransmission(request, address, port, 1000, 2);
+                String response = sendRequestWithRetransmission(request, address, port, 100, 1); // Reduced timeout and retries
                 if (response == null) {
                     System.out.println("[" + this.nodeName + "] Node " + nodeName + " not active, removing from addressStore");
                     iterator.remove();
@@ -793,5 +815,6 @@ public class Node implements NodeInterface {
     }
 
 }
+
 
 
