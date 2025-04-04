@@ -284,9 +284,9 @@ public class Node implements NodeInterface {
     public void handleIncomingMessages(int delay) throws Exception {
         byte[] buffer = new byte[1024];
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-        int effectiveDelay = delay > 0 ? delay : 1000; // Default to 1 second if delay is 0
+        int effectiveDelay = delay > 0 ? delay : 2000; // 2 seconds per attempt
         socket.setSoTimeout(effectiveDelay);
-        int maxAttempts = (delay > 0 ? delay / effectiveDelay : 3); // E.g., 12000ms / 1000ms = 12 attempts
+        int maxAttempts = (delay > 0 ? delay / effectiveDelay : 45); // Increased to 45 attempts (90 seconds total)
         int attempts = 0;
 
         try {
@@ -602,19 +602,18 @@ public class Node implements NodeInterface {
 
 
     public String read(String key) throws Exception {
-        // Try to read from local dataStore first
         if (dataStore.containsKey(key)) {
             String value = dataStore.get(key);
             return value;
         }
 
         // Try to read from the network
-        int maxRetries = 3;
+        int maxRetries = 5;
         for (int retry = 0; retry < maxRetries; retry++) {
-            handleIncomingMessages(500); // 500ms timeout to check for messages
+            handleIncomingMessages(3000); // 3 seconds per attempt
             List<Map.Entry<String, String>> nearest = findNearestNodes(key);
             if (nearest.isEmpty()) {
-                break; // No nodes to contact, skip to fallback
+                continue; // Keep retrying until maxRetries
             }
             for (Map.Entry<String, String> node : nearest) {
                 if (node.getKey().equals(this.nodeName)) continue;
@@ -636,12 +635,13 @@ public class Node implements NodeInterface {
                     }
                 }
             }
+
         }
 
 
 
 
-        // For non-poem keys (e.g., D:germaine.taylor@city.ac.uk), return from dataStore or null
+        // For non-poem keys (e.g., D:germaine.taylor@city.ac.uk), handle replication
         if (dataStore.containsKey(key) && !isAmongClosest(key)) {
             String value = dataStore.get(key);
             dataStore.remove(key);
