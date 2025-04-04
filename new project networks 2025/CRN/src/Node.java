@@ -276,8 +276,8 @@ public class Node implements NodeInterface {
         socket = new DatagramSocket(portNumber);
         // Update our address with the correct port
         // Update our address with the correct port
-//        String ip = addressStore.get(nodeName).split(":")[0];
-//        addressStore.put(nodeName, ip + ":" + portNumber);
+       String ip = addressStore.get(nodeName).split(":")[0];
+        addressStore.put(nodeName, ip + ":" + portNumber);
 
     }
 
@@ -329,9 +329,9 @@ public class Node implements NodeInterface {
                     attempts = 0; // Reset attempts on successful message
                 } catch (SocketTimeoutException e) {
                     attempts++;
-                    System.out.println("[" + nodeName + "] Timeout after " + effectiveDelay + "ms, attempt " + attempts + "/" + maxAttempts);
+                   // System.out.println("[" + nodeName + "] Timeout after " + effectiveDelay + "ms, attempt " + attempts + "/" + maxAttempts);
                     if (attempts >= maxAttempts) {
-                        System.out.println("[" + nodeName + "] Max attempts reached, exiting handleIncomingMessages");
+                       // System.out.println("[" + nodeName + "] Max attempts reached, exiting handleIncomingMessages");
                         return;
                     }
                 }
@@ -431,21 +431,21 @@ public class Node implements NodeInterface {
         String valuePart = parts[2];
         String key = parseCRNString(keyPart);
         String value = parseCRNString(valuePart);
-        System.out.println("[" + nodeName + "] Handling write request for key: " + key + ", value: " + value);
+        //System.out.println("[" + nodeName + "] Handling write request for key: " + key + ", value: " + value);
         if (key.startsWith("N:")) {
             boolean exists = addressStore.containsKey(key);
             addressStore.put(key, value);
             String response = txID + " X " + (exists ? "R" : "A");
-            System.out.println("[" + nodeName + "] Responding to address write: " + response);
+            //System.out.println("[" + nodeName + "] Responding to address write: " + response);
             sendingResponse(response, requestPacket.getAddress(), requestPacket.getPort());
         } else if (key.startsWith("D:")) {
             boolean conditionA = dataStore.containsKey(key);
             dataStore.put(key, value);
             String response = txID + " X " + (conditionA ? "R" : "A");
-            System.out.println("[" + nodeName + "] Responding to data write: " + response);
+           // System.out.println("[" + nodeName + "] Responding to data write: " + response);
             sendingResponse(response, requestPacket.getAddress(), requestPacket.getPort());
             if (!isAmongClosest(key)) {
-                System.out.println("[" + nodeName + "] Not among closest for " + key + ", forwarding");
+               // System.out.println("[" + nodeName + "] Not among closest for " + key + ", forwarding");
                 dataStore.remove(key);
                 List<Map.Entry<String, String>> nearest = findNearestNodes(key);
                 for (Map.Entry<String, String> node : nearest) {
@@ -602,35 +602,26 @@ public class Node implements NodeInterface {
 
 
     public String read(String key) throws Exception {
-        System.out.println("[" + nodeName + "] Reading key: " + key);
+        // Try to read from local dataStore first
         if (dataStore.containsKey(key)) {
             String value = dataStore.get(key);
-            System.out.println("[" + nodeName + "] Found locally: " + value);
             return value;
         }
 
-        // Retry reading from the network up to 3 times
+        // Try to read from the network
         int maxRetries = 3;
         for (int retry = 0; retry < maxRetries; retry++) {
             handleIncomingMessages(500); // 500ms timeout to check for messages
             List<Map.Entry<String, String>> nearest = findNearestNodes(key);
-            System.out.println("[" + nodeName + "] Nearest nodes for " + key + ": " + nearest);
             if (nearest.isEmpty()) {
-                System.out.println("[" + nodeName + "] No nearest nodes found for " + key + " (retry " + (retry + 1) + "/" + maxRetries + ")");
-                if (retry == maxRetries - 1) {
-                    System.out.println("[" + nodeName + "] Giving up on " + key + " after " + maxRetries + " retries");
-                    return null;
-                }
-                continue;
+                break; // No nodes to contact, skip to fallback
             }
             for (Map.Entry<String, String> node : nearest) {
                 if (node.getKey().equals(this.nodeName)) continue;
                 String nodeName = node.getKey();
                 String txID = generateTxID();
                 String request = txID + " R " + formatCRNString(key);
-                System.out.println("[" + this.nodeName + "] Sending read request to " + nodeName + ": " + request);
                 String response = sendMessage(request, nodeName, true);
-                System.out.println("[" + this.nodeName + "] Response from " + nodeName + ": " + response);
                 if (response != null) {
                     String[] parts = response.split(" ", 4);
                     if (parts.length >= 4 && parts[1].equals("S")) {
@@ -638,7 +629,6 @@ public class Node implements NodeInterface {
                         String value = parseCRNString(parts[3]);
                         if (responseChar.equals("Y")) {
                             dataStore.put(key, value);
-                            System.out.println("[" + this.nodeName + "] Retrieved from " + nodeName + ": " + value);
                             return value;
                         } else if (responseChar.equals("N")) {
                             continue;
@@ -646,13 +636,12 @@ public class Node implements NodeInterface {
                     }
                 }
             }
-
-            System.out.println("[" + nodeName + "] No value found for " + key + " on network (retry " + (retry + 1) + "/" + maxRetries + ")");
-            if (retry == maxRetries - 1) {
-                System.out.println("[" + nodeName + "] Giving up on " + key + " after " + maxRetries + " retries");
-                return null;
-            }
         }
+
+
+
+
+        // For non-poem keys (e.g., D:germaine.taylor@city.ac.uk), return from dataStore or null
         if (dataStore.containsKey(key) && !isAmongClosest(key)) {
             String value = dataStore.get(key);
             dataStore.remove(key);
@@ -666,7 +655,7 @@ public class Node implements NodeInterface {
                 }
             }
         }
-        return null;
+        return dataStore.getOrDefault(key, null);
 
     }
 
@@ -675,8 +664,8 @@ public class Node implements NodeInterface {
 
 
     public boolean write(String key, String value) throws Exception {
-        System.out.println("[" + nodeName + "] Writing key: " + key);
-        System.out.println("[" + nodeName + "] addressStore before handleIncomingMessages: " + addressStore);
+      //  System.out.println("[" + nodeName + "] Writing key: " + key);
+        //System.out.println("[" + nodeName + "] addressStore before handleIncomingMessages: " + addressStore);
 
         // Clean up addressStore before processing messages
         Iterator<Map.Entry<String, String>> iterator = addressStore.entrySet().iterator();
@@ -691,7 +680,7 @@ public class Node implements NodeInterface {
 
         // Skip the handleIncomingMessages loop to speed up bootstrap
         // The bootstrap messages from AzureLabTest will populate addressStore via handleWriteRequest
-        System.out.println("[" + nodeName + "] Skipping handleIncomingMessages loop for faster bootstrap");
+      //  System.out.println("[" + nodeName + "] Skipping handleIncomingMessages loop for faster bootstrap");
 
         // Validate addressStore entries
         iterator = addressStore.entrySet().iterator();
@@ -712,18 +701,18 @@ public class Node implements NodeInterface {
                 String request = txID + " G";
                 String response = sendRequestWithRetransmission(request, address, port, 100, 1); // Reduced timeout and retries
                 if (response == null) {
-                    System.out.println("[" + this.nodeName + "] Node " + nodeName + " not active, removing from addressStore");
+                  //  System.out.println("[" + this.nodeName + "] Node " + nodeName + " not active, removing from addressStore");
                     iterator.remove();
                 }
             } catch (Exception e) {
-                System.out.println("[" + this.nodeName + "] Error checking node " + nodeName + ", removing: " + e.getMessage());
+               // System.out.println("[" + this.nodeName + "] Error checking node " + nodeName + ", removing: " + e.getMessage());
                 iterator.remove();
             }
         }
-        System.out.println("[" + nodeName + "] addressStore after validation: " + addressStore);
+       // System.out.println("[" + nodeName + "] addressStore after validation: " + addressStore);
 
         List<Map.Entry<String, String>> nearest = findNearestNodes(key);
-        System.out.println("[" + nodeName + "] Nearest nodes for key " + key + ": " + nearest);
+        //System.out.println("[" + nodeName + "] Nearest nodes for key " + key + ": " + nearest);
 
         boolean success = false;
         boolean contactedOtherNode = false;
@@ -738,28 +727,24 @@ public class Node implements NodeInterface {
             String nodeName = node.getKey();
             String txID = generateTxID();
             String request = txID + " W " + formatCRNString(key) + formatCRNString(value);
-            System.out.println("[" + this.nodeName + "] Sending write request to " + nodeName + ": " + request);
+            //System.out.println("[" + this.nodeName + "] Sending write request to " + nodeName + ": " + request);
             String response = sendMessage(request, nodeName, true);
-            System.out.println("[" + this.nodeName + "] Response from " + nodeName + ": " + response);
+            //System.out.println("[" + this.nodeName + "] Response from " + nodeName + ": " + response);
             if (response != null) {
                 String[] parts = response.split(" ", 3);
                 if (parts.length >= 3 && parts[1].equals("X")) {
                     String responseChar = parts[2];
-                    System.out.println("[" + this.nodeName + "] Response char: " + responseChar);
+                    //System.out.println("[" + this.nodeName + "] Response char: " + responseChar);
                     if (responseChar.equals("R") || responseChar.equals("A")) {
                         success = true;
                     }
-                } else {
-                    System.out.println("[" + this.nodeName + "] Unexpected response format: " + response);
                 }
-            } else {
-                System.out.println("[" + this.nodeName + "] No response from " + nodeName);
             }
         }
 
         // If we didn't contact any other node or got no successful responses, store locally
         if (!contactedOtherNode || !success) {
-            System.out.println("[" + nodeName + "] No successful write to other nodes, storing locally: " + key);
+            //System.out.println("[" + nodeName + "] No successful write to other nodes, storing locally: " + key);
             if (key.startsWith("N:")) {
                 addressStore.put(key, value);
             } else if (key.startsWith("D:")) {
@@ -768,7 +753,7 @@ public class Node implements NodeInterface {
             success = true;
         }
 
-        System.out.println("[" + this.nodeName + "] Write success for " + key + ": " + success);
+       // System.out.println("[" + this.nodeName + "] Write success for " + key + ": " + success);
         return success;
             }
 
