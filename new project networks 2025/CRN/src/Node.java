@@ -270,22 +270,23 @@ public class Node implements NodeInterface {
 
 
     public void openPort(int portNumber) throws Exception {
-        if (portNumber < 20110 || portNumber > 20130) {
-            throw new Exception("Port number must be between 20110 and 20130");
-        }
+//        if (portNumber < 20110 || portNumber > 20130) {
+//            throw new Exception("Port number must be between 20110 and 20130");
+//        }
         socket = new DatagramSocket(portNumber);
         // Update our address with the correct port
         // Update our address with the correct port
-        String ip = addressStore.get(nodeName).split(":")[0];
-        addressStore.put(nodeName, ip + ":" + portNumber);
+//        String ip = addressStore.get(nodeName).split(":")[0];
+//        addressStore.put(nodeName, ip + ":" + portNumber);
 
     }
 
     public void handleIncomingMessages(int delay) throws Exception {
         byte[] buffer = new byte[1024];
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-        socket.setSoTimeout(delay > 0 ? delay : 1000); // Default to 1 second if delay is 0
-        int maxAttempts = 3; // Exit after 3 timeouts (3 seconds total)
+        int effectiveDelay = delay > 0 ? delay : 1000; // Default to 1 second if delay is 0
+        socket.setSoTimeout(effectiveDelay);
+        int maxAttempts = (delay > 0 ? delay / effectiveDelay : 3); // E.g., 12000ms / 1000ms = 12 attempts
         int attempts = 0;
 
         try {
@@ -328,7 +329,7 @@ public class Node implements NodeInterface {
                     attempts = 0; // Reset attempts on successful message
                 } catch (SocketTimeoutException e) {
                     attempts++;
-                    System.out.println("[" + nodeName + "] Timeout after " + (delay > 0 ? delay : 1000) + "ms, attempt " + attempts + "/" + maxAttempts);
+                    System.out.println("[" + nodeName + "] Timeout after " + effectiveDelay + "ms, attempt " + attempts + "/" + maxAttempts);
                     if (attempts >= maxAttempts) {
                         System.out.println("[" + nodeName + "] Max attempts reached, exiting handleIncomingMessages");
                         return;
@@ -337,8 +338,9 @@ public class Node implements NodeInterface {
             }
         } catch (Exception e) {
             System.out.println("[" + nodeName + "] Error in handleIncomingMessages: " + e.getMessage());
-            throw e; // Re-throw to allow calling method to handle
+            throw e;
         }
+
 
 
 
@@ -600,32 +602,55 @@ public class Node implements NodeInterface {
 
 
     public String read(String key) throws Exception {
+        System.out.println("[" + nodeName + "] Reading key: " + key);
         if (dataStore.containsKey(key)) {
-            return dataStore.get(key);
+            String value = dataStore.get(key);
+            System.out.println("[" + nodeName + "] Found locally: " + value);
+            return value;
         }
-        handleIncomingMessages(1000);
-        List<Map.Entry<String, String>> nearest = findNearestNodes(key);
-        if (nearest.isEmpty()) {
-            return null;
-        }
-        for (Map.Entry<String, String> node : nearest) {
-            if (node.getKey().equals(this.nodeName)) continue;
-            String nodeName = node.getKey();
-            String txID = generateTxID();
-            String request = txID + " R " + formatCRNString(key);
-            String response = sendMessage(request, nodeName, true);
-            if (response != null) {
-                String[] parts = response.split(" ", 4);
-                if (parts.length >= 4 && parts[1].equals("S")) {
-                    String responseChar = parts[2];
-                    String value = parseCRNString(parts[3]);
-                    if (responseChar.equals("Y")) {
-                        dataStore.put(key, value);
-                        return value;
-                    } else if (responseChar.equals("N")) {
-                        continue;
+
+        // Retry reading from the network up to 3 times
+        int maxRetries = 3;
+        for (int retry = 0; retry < maxRetries; retry++) {
+            handleIncomingMessages(500); // 500ms timeout to check for messages
+            List<Map.Entry<String, String>> nearest = findNearestNodes(key);
+            System.out.println("[" + nodeName + "] Nearest nodes for " + key + ": " + nearest);
+            if (nearest.isEmpty()) {
+                System.out.println("[" + nodeName + "] No nearest nodes found for " + key + " (retry " + (retry + 1) + "/" + maxRetries + ")");
+                if (retry == maxRetries - 1) {
+                    System.out.println("[" + nodeName + "] Giving up on " + key + " after " + maxRetries + " retries");
+                    return null;
+                }
+                continue;
+            }
+            for (Map.Entry<String, String> node : nearest) {
+                if (node.getKey().equals(this.nodeName)) continue;
+                String nodeName = node.getKey();
+                String txID = generateTxID();
+                String request = txID + " R " + formatCRNString(key);
+                System.out.println("[" + this.nodeName + "] Sending read request to " + nodeName + ": " + request);
+                String response = sendMessage(request, nodeName, true);
+                System.out.println("[" + this.nodeName + "] Response from " + nodeName + ": " + response);
+                if (response != null) {
+                    String[] parts = response.split(" ", 4);
+                    if (parts.length >= 4 && parts[1].equals("S")) {
+                        String responseChar = parts[2];
+                        String value = parseCRNString(parts[3]);
+                        if (responseChar.equals("Y")) {
+                            dataStore.put(key, value);
+                            System.out.println("[" + this.nodeName + "] Retrieved from " + nodeName + ": " + value);
+                            return value;
+                        } else if (responseChar.equals("N")) {
+                            continue;
+                        }
                     }
                 }
+            }
+
+            System.out.println("[" + nodeName + "] No value found for " + key + " on network (retry " + (retry + 1) + "/" + maxRetries + ")");
+            if (retry == maxRetries - 1) {
+                System.out.println("[" + nodeName + "] Giving up on " + key + " after " + maxRetries + " retries");
+                return null;
             }
         }
         if (dataStore.containsKey(key) && !isAmongClosest(key)) {
@@ -642,6 +667,7 @@ public class Node implements NodeInterface {
             }
         }
         return null;
+
     }
 
 
@@ -815,6 +841,5 @@ public class Node implements NodeInterface {
     }
 
 }
-
 
 
