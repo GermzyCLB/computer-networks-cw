@@ -24,7 +24,7 @@ class AzureLabTest {
             String nodeName = "N:" + emailAddress;
             node.setNodeName(nodeName);
 
-            int port = 2011;
+            int port = 20110;
             node.openPort(port);
 
             // Wait and hope that we get sent the address of some other nodes
