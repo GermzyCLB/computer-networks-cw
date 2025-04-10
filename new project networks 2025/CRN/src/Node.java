@@ -354,4 +354,33 @@ public class Node implements NodeInterface {
         backgroundListener.setDaemon(true);
         backgroundListener.start();
     }
+
+    // Add a main method for testing
+    public static void main(String[] args) {
+        try {
+            // Create a Node instance
+            Node node = new Node();
+
+            // Set the node name (must start with "N:")
+            String nodeName = "N:testNode";
+            node.setNodeName(nodeName);
+            System.out.println("Node name set to: " + nodeName);
+
+            // Open a port (choose a port number that is not in use)
+            int port = 12345; // You can change this to any available port
+            node.openPort(port);
+            System.out.println("Node listening on port: " + port);
+
+            // Optionally, write some initial data to the key-value store
+            node.write("testKey", "testValue");
+            System.out.println("Wrote testKey:testValue to the key-value store");
+
+            // Listen for incoming messages indefinitely
+            System.out.println("Listening for incoming messages...");
+            node.handleIncomingMessages(0); // 0 means listen indefinitely
+        } catch (Exception e) {
+            System.err.println("Error in main: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 }
